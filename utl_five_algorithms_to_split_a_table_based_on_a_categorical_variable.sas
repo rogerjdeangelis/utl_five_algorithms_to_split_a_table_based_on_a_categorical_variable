@@ -217,3 +217,78 @@ datalines;
 run;quit;
 
 
+*                  _
+ _ __   __ _ _   _| |
+| '_ \ / _` | | | | |
+| |_) | (_| | |_| | |
+| .__/ \__,_|\__,_|_|
+|_|
+;
+
+Paul Dorfman <sashole@bellsouth.net>
+1:58 AM (6 hours ago)
+
+ to SAS-L, me
+Roger,
+
+With hashing against the sorted data, it's most natural to use the DoW-loop:
+
+data _null_;
+  dcl hash h(dataset:'have(obs=0)',multidata:'y');
+   h.definekey('Weight');
+   h.definedata(all:'y');
+   h.definedone();
+   do until (last.weight) ;
+      set have;
+      by weight;
+      h.add();
+   end ;
+    h.output(dataset: weight);
+ run;
+
+However, when you use the hash method, you don't have to sort beforehand.
+Instead, you can have as many instances of object H as there are distinct
+values of Weight, creating them on the fly as you encounter new values of
+Weight and storing the pointers to them by Weight in another hash table
+(X, below). While you're reading the file, you store the data for each value of Weight in
+the corresponding instance of H, and when the file has been processed,
+iterate through each instance and dump its data content to the aptly named file, like so:
+
+data _null_ ;
+  dcl hash x() ;
+  x.defineKey  ('weight') ;
+  x.defineData ('weight','h') ;
+  x.defineDone () ;
+  dcl hash h ;
+  do until (z) ;
+    set have end = z ;
+    if x.find() ne 0 then do ;
+      h = _new_ hash (dataset:'have(obs=0)', multidata:'y') ;
+      h.defineKey  ('weight') ;
+      h.defineData (all:'y') ;
+      h.defineDone () ;
+      x.add() ;
+    end ;
+    h.add() ;
+  end ;
+  dcl hiter i('x') ;
+  do while (i.next()=0) ;
+    h.output (dataset: weight) ;
+  end ;
+  stop ;
+run ;
+
+Credit for inventing the method goes, of course, to Richard DeVenezia (2004).
+ After my hash talk at Montreal SUGI, I was asked if hash object instances
+could be stored as data in another hash table. I replied "Not to my knowledge"
+and was wrong, for soon after the conference, Rich posted code akin to the
+above on SAS-L. Well, I wasn't entirely wrong because it's not really the inst
+ances of H stored in X as data but the pointers to them. Every time X is
+successfully searched using X.FIND(), a new value of non-scalar variable H
+(of type hash object) is surfaced in the PDV by overwriting the host variable
+H. It points to the instance to which the data is then added by H.ADD().
+The collection process works similarly. The iterator I dumps the current pointer valu
+e of H into the PDV, and this is what gets picked up by the H.OUTPUT method.
+
+
+
